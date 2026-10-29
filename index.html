@@ -5,13 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PhysioMetrics - 3D Atlas Anatomie</title>
   
-  <!-- Fonty & Ikony -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-  <!-- Import Map pro Three.js s podporou Meshopt a Draco dekodérů -->
   <script type="importmap">
     {
       "imports": {
@@ -31,7 +29,6 @@
       --accent-gradient: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);
       --text-main: #f0f4f8;
       --text-muted: #8a99ad;
-      --card-hover: rgba(0, 242, 254, 0.08);
     }
 
     * {
@@ -57,7 +54,6 @@
       position: relative;
     }
 
-    /* 3D Viewport */
     #viewport-container {
       flex: 1;
       height: 100%;
@@ -71,7 +67,6 @@
       display: block;
     }
 
-    /* Overlay Bar */
     header {
       position: absolute;
       top: 16px;
@@ -109,7 +104,6 @@
     .brand-title h1 {
       font-size: 18px;
       font-weight: 700;
-      letter-spacing: 0.5px;
     }
 
     .brand-title p {
@@ -117,7 +111,6 @@
       color: var(--text-muted);
     }
 
-    /* Loading Overlay */
     #loading-overlay {
       position: absolute;
       top: 0;
@@ -163,7 +156,6 @@
       transition: width 0.2s ease;
     }
 
-    /* Sidebar Panel */
     #sidebar {
       width: 360px;
       height: 100%;
@@ -185,7 +177,7 @@
     }
 
     .panel-card h3 {
-      font-size: 14px;
+      font-size: 13px;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: var(--text-muted);
@@ -195,24 +187,42 @@
       gap: 8px;
     }
 
-    #info-name {
+    #info-cz {
       font-size: 20px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--accent);
       margin-bottom: 4px;
     }
 
-    #info-latin {
-      font-size: 13px;
+    #info-lat {
+      font-size: 14px;
       font-style: italic;
-      color: var(--text-muted);
+      color: #70a1ff;
+      margin-bottom: 12px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 4px 8px;
+      background: rgba(0, 242, 254, 0.1);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--accent);
       margin-bottom: 12px;
     }
 
     #info-desc {
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       color: var(--text-main);
+    }
+
+    .tech-id {
+      margin-top: 15px;
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: monospace;
     }
 
     .controls-hint {
@@ -235,7 +245,7 @@
   <div id="app-container">
     <header>
       <div class="brand">
-        <div class="brand-icon"><i class="fa-solid fa-cube"></i></div>
+        <div class="brand-icon"><i class="fa-solid fa-bone"></i></div>
         <div class="brand-title">
           <h1>PhysioMetrics 3D</h1>
           <p>Anatomický Studijní Atlas</p>
@@ -246,7 +256,7 @@
     <div id="viewport-container">
       <div id="loading-overlay">
         <div class="spinner"></div>
-        <div id="loading-text" style="color: var(--text-main); font-weight: 500;">Načítám 3D model anatomie...</div>
+        <div id="loading-text" style="color: var(--text-main); font-weight: 500;">Načítám 3D model...</div>
         <div class="progress-bar-container">
           <div id="progress-bar" class="progress-bar"></div>
         </div>
@@ -264,10 +274,12 @@
       <div class="panel-card" style="flex: 1;">
         <h3><i class="fa-solid fa-circle-info"></i> Detail struktury</h3>
         <div id="info-content">
-          <div id="info-name">Vyberte část na modelu</div>
-          <div id="info-latin">Klikněte myší na libovolnou strukturu ve 3D okně</div>
+          <div id="info-cz">Klikněte na část těla</div>
+          <div id="info-lat">Položka nevybrána</div>
+          <div id="info-tag" class="tag" style="display:none;">Soustava</div>
           <hr style="border: none; border-top: 1px solid var(--panel-border); margin: 12px 0;">
-          <p id="info-desc">Po kliknutí na konkrétní kost nebo sval se zde zobrazí jeho název, latinské názvosloví a funkční popis.</p>
+          <p id="info-desc">Kliknutím na jakoukoli kost nebo sval zobrazíte jeho název v češtině, latině a podrobný popis.</p>
+          <div id="info-tech" class="tech-id"></div>
         </div>
       </div>
     </div>
@@ -279,7 +291,17 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
-    // Inicializace Scény, Kamery, Rendereru
+    // Česká a Latinská anatomická databáze
+    const anatomyDB = {
+      'cranium': { cz: 'Lebka', lat: 'Cranium', sys: 'Kosterní soustava', desc: 'Schránka chránící mozek a smyslové orgány.' },
+      'femur': { cz: 'Kost stehenní', lat: 'Os femoris', sys: 'Kosterní soustava', desc: 'Nejdelší a nejsilnější kost v lidském těle.' },
+      'humerus': { cz: 'Kost pažní', lat: 'Humerus', sys: 'Kosterní soustava', desc: 'Dlouhá kost tvořící podklad nadloktí.' },
+      'pelvis': { cz: 'Pánev', lat: 'Pelvis', sys: 'Kosterní soustava', desc: 'Kostěný kruh spojující páteř s dolními končetinami.' },
+      'biceps': { cz: 'Dvojhlavý sval pažní', lat: 'Musculus biceps brachii', sys: 'Svalová soustava', desc: 'Sval na přední straně nadloktí, oheč loketního kloubu.' },
+      'deltoid': { cz: 'Deltoidový sval', lat: 'Musculus deltoideus', sys: 'Svalová soustava', desc: 'Sval pokrývající ramenní kloub.' },
+      'pectoralis': { cz: 'Velký prsní sval', lat: 'Musculus pectoralis major', sys: 'Svalová soustava', desc: 'Mohutný vějířovitý sval přední stěny hrudníku.' }
+    };
+
     const canvas = document.getElementById('canvas3d');
     const scene = new THREE.Scene();
     
@@ -289,15 +311,12 @@
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setSize(canvas.clientWidth, canvas.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
 
-    // Kontroly kamery
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.target.set(0, 0.9, 0);
 
-    // Osvětlení
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
@@ -305,37 +324,35 @@
     dirLight1.position.set(2, 4, 3);
     scene.add(dirLight1);
 
-    const dirLight2 = new THREE.DirectionalLight(0x00f2fe, 0.8);
-    dirLight2.position.set(-2, 1, -2);
-    scene.add(dirLight2);
-
-    // Dekodéry pro compressed GLTF (.glb)
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
 
     const loader = new GLTFLoader();
     loader.setDRACOLoader(dracoLoader);
 
-    // Zapnutí Meshopt Dekodéru
     if (window.MeshoptDecoder) {
       loader.setMeshoptDecoder(window.MeshoptDecoder);
     }
 
     let loadedModel = null;
+    let selectedObject = null;
+    let originalMaterial = null;
+
+    const highlightMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00f2fe,
+      emissive: 0x0072ff,
+      emissiveIntensity: 0.5,
+      roughness: 0.2
+    });
+
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    let hoveredMesh = null;
-    let selectedMesh = null;
-
-    // Načtení souboru z GitHub repozitáře
-    const modelUrl = 'muscular_insertions-v1.glb';
 
     loader.load(
-      modelUrl,
+      'muscular_insertions-v1.glb',
       (gltf) => {
         loadedModel = gltf.scene;
         
-        // Automatické vycentrování a měřítko
         const box = new THREE.Box3().setFromObject(loadedModel);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
@@ -344,14 +361,12 @@
         const scale = 1.6 / maxDim;
         loadedModel.scale.setScalar(scale);
 
-        // Posun na střed
         loadedModel.position.x = -center.x * scale;
         loadedModel.position.y = -center.y * scale + 0.8;
         loadedModel.position.z = -center.z * scale;
 
         scene.add(loadedModel);
 
-        // Skrytí loading obrazovky
         document.getElementById('loading-overlay').style.opacity = '0';
         setTimeout(() => {
           document.getElementById('loading-overlay').style.display = 'none';
@@ -363,14 +378,9 @@
           document.getElementById('progress-bar').style.width = percent + '%';
           document.getElementById('loading-text').innerText = `Načítám 3D model... ${percent}%`;
         }
-      },
-      (error) => {
-        console.error('Chyba při načítání 3D modelu:', error);
-        document.getElementById('loading-text').innerText = 'Chyba při načítání souboru GLB.';
       }
     );
 
-    // Raycasting pro klikání na objekty
     window.addEventListener('click', (e) => {
       const rect = canvas.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
@@ -381,22 +391,49 @@
         const intersects = raycaster.intersectObjects(loadedModel.children, true);
         if (intersects.length > 0) {
           const hit = intersects[0].object;
-          
-          document.getElementById('info-name').innerText = hit.name || 'Anatomická struktura';
-          document.getElementById('info-latin').innerText = 'Zobrazený objekt z 3D atlasu';
-          document.getElementById('info-desc').innerText = `Detailní část vybraného modelu (${hit.name || 'Bez specifického ID'}).`;
+
+          if (selectedObject && originalMaterial) {
+            selectedObject.material = originalMaterial;
+          }
+
+          selectedObject = hit;
+          originalMaterial = hit.material;
+          hit.material = highlightMaterial;
+
+          const rawName = (hit.name || '').toLowerCase();
+          let matched = null;
+
+          for (let key in anatomyDB) {
+            if (rawName.includes(key)) {
+              matched = anatomyDB[key];
+              break;
+            }
+          }
+
+          const tagEl = document.getElementById('info-tag');
+          if (matched) {
+            document.getElementById('info-cz').innerText = matched.cz;
+            document.getElementById('info-lat').innerText = matched.lat;
+            document.getElementById('info-desc').innerText = matched.desc;
+            tagEl.innerText = matched.sys;
+            tagEl.style.display = 'inline-block';
+          } else {
+            document.getElementById('info-cz').innerText = 'Anatomická struktura';
+            document.getElementById('info-lat').innerText = 'Názvosloví v přípravě';
+            document.getElementById('info-desc').innerText = 'Tato část 3D modelu zatím nemá přiřazen detailní popis v databázi.';
+            tagEl.style.display = 'none';
+          }
+          document.getElementById('info-tech').innerText = `ID Objektu: ${hit.name || 'neznámé'}`;
         }
       }
     });
 
-    // Resize
     window.addEventListener('resize', () => {
       camera.aspect = canvas.clientWidth / canvas.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(canvas.clientWidth, canvas.clientHeight);
     });
 
-    // Render loop
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
