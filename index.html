@@ -8,9 +8,11 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Three.js a OrbitControls -->
+    <!-- Three.js, OrbitControls, GLTFLoader, and DRACOLoader -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -105,6 +107,21 @@
         <!-- 3D Canvas Container -->
         <div id="canvas-container" class="w-full h-full cursor-grab active:cursor-grabbing relative">
             <canvas id="three-canvas" class="w-full h-full"></canvas>
+
+            <!-- Loading Overlay -->
+            <div id="loading-overlay" class="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-40 flex flex-col items-center justify-center p-6 transition-opacity duration-500">
+                <div class="p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl text-cyan-400 mb-4 animate-bounce">
+                    <i data-lucide="box" class="w-8 h-8"></i>
+                </div>
+                <h2 class="text-base font-bold text-slate-100 mb-1">Načítání 3D Anatomického Modelu...</h2>
+                <p id="loading-status" class="text-xs text-slate-400 mb-4 font-mono">muscular_insertions-v1.glb</p>
+                
+                <!-- Progress Bar -->
+                <div class="w-64 bg-slate-900 border border-slate-800 rounded-full h-2.5 overflow-hidden">
+                    <div id="loading-bar" class="bg-gradient-to-r from-cyan-500 to-blue-500 h-full w-0 transition-all duration-300"></div>
+                </div>
+                <span id="loading-text" class="text-[11px] text-cyan-400 font-semibold mt-2">0%</span>
+            </div>
 
             <!-- Floating View Controls / Hints -->
             <div class="absolute bottom-4 left-4 z-10 flex flex-col space-y-2 pointer-events-none">
@@ -261,100 +278,18 @@
 
     <!-- Application Script -->
     <script>
-        // --- ANATOMICAL DATA STORE ---
-        const ANATOMY_DATA = [
-            {
-                id: 'skull',
-                nameCz: 'Lebka',
-                nameLat: 'Cranium',
-                system: 'skeletal',
-                systemLabel: 'Skeletální soustava',
-                color: 0xe2e8f0,
-                desc: 'Kostěná struktura chránící mozek a tvořící oporu obličeje. Skládá se z neurocrania (mozkové části) a splanchnocrania (obličejové části).',
-                facts: ['Skládá se z 22 kostí (mimo sluchových kůstek)', 'Sutury (švy) spojují jednotlivé ploché kosti', 'Jediná pohyblivá kost je dolní čelist (mandibula)']
-            },
-            {
-                id: 'spine',
-                nameCz: 'Páteř',
-                nameLat: 'Columna vertebralis',
-                system: 'skeletal',
-                color: 0xcbd5e1,
-                desc: 'Osová kostra těla složená z obratlů. Chrání míchu a umožňuje ohebnost trupu a nosnost těla.',
-                facts: ['Skládá se z 33–34 obratlů', 'Rozdělena na krční, hrudní, bederní, křížovou a kostrční část', 'Má dvojesovité prohnutí (lordóza a kyfóza)']
-            },
-            {
-                id: 'ribcage',
-                nameCz: 'Hrudní koš',
-                nameLat: 'Cavea thoracis',
-                system: 'skeletal',
-                color: 0x94a3b8,
-                desc: 'Klec tvořená hrudními obratli, žebry a hrudní kostí. Chrání životně důležité orgány – srdce a plíce.',
-                facts: ['Tvořen 12 páry žeber', 'Žebra dělíme na pravá, nepravá a volná', 'Vpředu se připojují k hrudní kosti (sternum)']
-            },
-            {
-                id: 'pelvis',
-                nameCz: 'Pánev',
-                nameLat: 'Pelvis',
-                system: 'skeletal',
-                color: 0xcbd5e1,
-                desc: 'Masivní kostěný kruh spojující páteř s dolními končetinami. Přenáší váhu trupu na nohy a chrání orgány malé pánve.',
-                facts: ['Skládá se z kosti křížové a dvou kostí pánevních', 'Výrazný pohlavní dimorfismus (ženská pánev je širší pro porod)', 'Obsahuje kyčelní kloub (articulatio coxae)']
-            },
-            {
-                id: 'limbs_upper',
-                nameCz: 'Horní končetiny (Kosti)',
-                nameLat: 'Ossa mebri superioris',
-                system: 'skeletal',
-                color: 0x94a3b8,
-                desc: 'Kosterní opora paže, předloktí a ruky. Zahrnuje kost pažní (humerus), vřetenní (radius) a loketní (ulna).',
-                facts: ['Ramenní kloub je nejpohyblivější kloub v lidském těle', 'Ruka se skládá z 27 kůstek', 'Lopatka a klíční kost tvoří pletenec horní končetiny']
-            },
-            {
-                id: 'limbs_lower',
-                nameCz: 'Dolní končetiny (Kosti)',
-                nameLat: 'Ossa mebri inferioris',
-                system: 'skeletal',
-                color: 0x94a3b8,
-                desc: 'Nosná kostra dolních končetin. Zahrnuje nejdelší kost v těle – kost stehenní (femur), kost holenní (tibia) a lýtkovou (fibula).',
-                facts: ['Femur je nejdelší a nejsilnější kostí v těle', 'Jablíčko (patella) je největší sesamská kost', 'Chodidlo má komplexní podélnou i příčnou klenbu']
-            },
-            {
-                id: 'muscles_chest',
-                nameCz: 'Velký prsní sval',
-                nameLat: 'Musculus pectoralis major',
-                system: 'muscular',
-                color: 0xf43f5e,
-                desc: 'Mohutný vějířovitý sval na přední straně hrudníku. Zodpovídá za připažení, vnitřní rotaci a předpřažení paže.',
-                facts: ['Pomáhá jako pomocný dýchací sval při nádechu', 'Má dvě hlavní části: clavicular a sternocostal', 'Gypy upínání na humerus']
-            },
-            {
-                id: 'muscles_abs',
-                nameCz: 'Přímý sval břišní',
-                nameLat: 'Musculus rectus abdominis',
-                system: 'muscular',
-                color: 0xe11d48,
-                desc: 'Párový sval probíhající vertikálně na přední stěně břicha. Zajišťuje ohýbání páteře dopředu a udržuje vnitrobřišní tlak.',
-                facts: ['Rovnoměrně předělen šlachovými vsatkami (tvoří "six-pack")', 'Uprostřed je spojen vazivovou čárou (linea alba)', 'Důležitý pro stabilizaci středu těla (core)']
-            },
-            {
-                id: 'muscles_quads',
-                nameCz: 'Čtyřhlavý sval stehenní',
-                nameLat: 'Musculus quadriceps femoris',
-                system: 'muscular',
-                color: 0xf43f5e,
-                desc: 'Nejobjemnější sval lidského těla nacházející se na přední straně stehna. Hlavní extenzor (natahač) kolenního kloubu.',
-                facts: ['Skládá se ze 4 samostatných hlaviček', 'Upíná se přes patelární šlachu na tibii', 'Klíčový pro chůzi, běh a skoky']
-            },
-            {
-                id: 'heart',
-                nameCz: 'Srdce',
-                nameLat: 'Cor',
-                system: 'cardio',
-                color: 0xef4444,
-                desc: 'Dutý svalový orgán fungující jako tlakové čerpadlo krevního oběhu. Pumpuje odkysličenou krev do plic a kyslíkem obohacenou krev do těla.',
-                facts: ['Za den přečerpá přibližně 7 500 litrů krve', 'Udeří zhruba 100 000krát za den', 'Má 4 hlavní dutiny: 2 síně a 2 komory']
-            }
-        ];
+        // --- ANATOMICAL DATA STORE & DICTIONARY ---
+        const ANATOMY_DICTIONARY = {
+            'skull': { nameCz: 'Lebka', nameLat: 'Cranium', system: 'skeletal', desc: 'Kostěná struktura chránící mozek a obličejový skelet.', facts: ['22 kostí', 'Ochrana mozku'] },
+            'spine': { nameCz: 'Páteř', nameLat: 'Columna vertebralis', system: 'skeletal', desc: 'Osová kostra těla složená z obratlů.', facts: ['33-34 obratlů', 'Dvojesovité prohnutí'] },
+            'femur': { nameCz: 'Kost stehenní', nameLat: 'Femur', system: 'skeletal', desc: 'Nejdelší a nejsilnější kost v lidském těle.', facts: ['Nosná kost dolní končetiny'] },
+            'humerus': { nameCz: 'Kost pažní', nameLat: 'Humerus', system: 'skeletal', desc: 'Dlouhá kost horní končetiny.', facts: ['Součást ramenního a loketního kloubu'] },
+            'pectoralis': { nameCz: 'Velký prsní sval', nameLat: 'Musculus pectoralis major', system: 'muscular', desc: 'Vějířovitý sval na hrudníku.', facts: ['Připažení a rotace paže'] },
+            'biceps': { nameCz: 'Dvojhlavý sval pažní', nameLat: 'Musculus biceps brachii', system: 'muscular', desc: 'Sval na přední straně paže.', facts: ['Ohybač loketního kloubu'] },
+            'heart': { nameCz: 'Srdce', nameLat: 'Cor', system: 'cardio', desc: 'Svalová pumpa krevního oběhu.', facts: ['Přečerpá ~7500 litrů krve denně'] }
+        };
+
+        let ANATOMY_DATA = [];
 
         // --- GLOBAL APP STATE ---
         let scene, camera, renderer, controls;
@@ -375,7 +310,7 @@
         window.onload = function() {
             lucide.createIcons();
             initThreeJS();
-            createAnatomyModel();
+            loadGLTFModel('muscular_insertions-v1.glb');
             setupEvents();
             animate();
         };
@@ -403,18 +338,18 @@
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.maxDistance = 15;
-            controls.minDistance = 2;
+            controls.minDistance = 1;
             controls.target.set(0, 0, 0);
 
             // Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
 
-            const dirLight1 = new THREE.DirectionalLight(0x38bdf8, 1.2); // Cyan accent light
+            const dirLight1 = new THREE.DirectionalLight(0x38bdf8, 1.2);
             dirLight1.position.set(5, 10, 7);
             scene.add(dirLight1);
 
-            const dirLight2 = new THREE.DirectionalLight(0xf43f5e, 0.6); // Warm backlight
+            const dirLight2 = new THREE.DirectionalLight(0xf43f5e, 0.6);
             dirLight2.position.set(-5, -5, -5);
             scene.add(dirLight2);
 
@@ -422,6 +357,168 @@
             const grid = new THREE.GridHelper(20, 20, 0x1e293b, 0x0f172a);
             grid.position.y = -3.2;
             scene.add(grid);
+        }
+
+        // --- GLTF MODEL LOADER WITH DRACO SUPPORT ---
+        function loadGLTFModel(url) {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const loadingBar = document.getElementById('loading-bar');
+            const loadingText = document.getElementById('loading-text');
+
+            const loader = new THREE.GLTFLoader();
+
+            // Setup DRACOLoader for compressed GLTF/GLB models
+            const dracoLoader = new THREE.DRACOLoader();
+            dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+            loader.setDRACOLoader(dracoLoader);
+
+            loader.load(
+                url,
+                (gltf) => {
+                    const model = gltf.scene;
+                    
+                    // Auto-center and fit model size
+                    const box = new THREE.Box3().setFromObject(model);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scale = 4.5 / (maxDim || 1);
+                    model.scale.setScalar(scale);
+
+                    model.position.sub(center.multiplyScalar(scale));
+                    model.position.y += 0.2;
+
+                    // Parse meshes inside GLTF
+                    ANATOMY_DATA = [];
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+
+                            let rawName = child.name || 'Anatomická struktura';
+                            let cleanName = rawName.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+                            let partId = child.uuid;
+
+                            // Match with anatomy dictionary if possible
+                            let lower = rawName.toLowerCase();
+                            let matchedKey = Object.keys(ANATOMY_DICTIONARY).find(k => lower.includes(k));
+                            let info = matchedKey ? ANATOMY_DICTIONARY[matchedKey] : {
+                                nameCz: cleanName,
+                                nameLat: rawName,
+                                system: lower.includes('muscle') || lower.includes('muscul') ? 'muscular' : 'skeletal',
+                                desc: `Detailní 3D anatomická struktura: ${cleanName}.`,
+                                facts: ['Součást načteného 3D modelu', 'Sledujte návaznost svalových úponů']
+                            };
+
+                            child.userData = {
+                                id: partId,
+                                nameCz: info.nameCz,
+                                nameLat: info.nameLat,
+                                system: info.system,
+                                originalColor: child.material.color ? child.material.color.getHex() : 0xcccccc,
+                                originalOpacity: child.material.opacity || 1
+                            };
+
+                            meshMap.set(partId, child);
+
+                            ANATOMY_DATA.push({
+                                id: partId,
+                                nameCz: info.nameCz,
+                                nameLat: info.nameLat,
+                                system: info.system,
+                                systemLabel: info.system === 'muscular' ? 'Svalová soustava' : 'Skeletální soustava',
+                                desc: info.desc,
+                                facts: info.facts
+                            });
+                        }
+                    });
+
+                    scene.add(model);
+
+                    // Hide Loader
+                    setTimeout(() => {
+                        loadingOverlay.classList.add('opacity-0');
+                        setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
+                    }, 300);
+                },
+                (xhr) => {
+                    if (xhr.lengthComputable) {
+                        const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
+                        loadingBar.style.width = percentComplete + '%';
+                        loadingText.innerText = percentComplete + '%';
+                    } else {
+                        loadingText.innerText = 'Načítání...';
+                    }
+                },
+                (error) => {
+                    console.warn('GLTF loading failed or file missing. Generating fallback procedural anatomy...', error);
+                    document.getElementById('loading-status').innerText = 'Používám záložní 3D anatomii...';
+                    createFallbackAnatomyModel();
+                    setTimeout(() => {
+                        loadingOverlay.classList.add('opacity-0');
+                        setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
+                    }, 500);
+                }
+            );
+        }
+
+        // --- FALLBACK MODEL PROCEDURAL CREATION ---
+        function createFallbackAnatomyModel() {
+            ANATOMY_DATA = [
+                { id: 'skull', nameCz: 'Lebka', nameLat: 'Cranium', system: 'skeletal', systemLabel: 'Skeletální', desc: 'Kostěná struktura chránící mozek.', facts: ['22 kostí', 'Švy (sutury)'] },
+                { id: 'spine', nameCz: 'Páteř', nameLat: 'Columna vertebralis', system: 'skeletal', systemLabel: 'Skeletální', desc: 'Osová kostra složená z obratlů.', facts: ['33-34 obratlů', 'Mícha uvnitř'] },
+                { id: 'ribcage', nameCz: 'Hrudní koš', nameLat: 'Cavea thoracis', system: 'skeletal', systemLabel: 'Skeletální', desc: 'Chrání srdce a plíce.', facts: ['12 párů žeber'] },
+                { id: 'muscles_chest', nameCz: 'Prsní sval', nameLat: 'Musculus pectoralis major', system: 'muscular', systemLabel: 'Svalová', desc: 'Vějířovitý sval hrudníku.', facts: ['Připažení paže'] },
+                { id: 'heart', nameCz: 'Srdce', nameLat: 'Cor', system: 'cardio', systemLabel: 'Kardiovaskulární', desc: 'Svalové čerpadlo oběhu.', facts: ['4 komory'] }
+            ];
+
+            function makeMat(color) {
+                return new THREE.MeshStandardMaterial({ color: color, roughness: 0.3 });
+            }
+
+            const group = new THREE.Group();
+
+            const skull = new THREE.Mesh(new THREE.SphereGeometry(0.55, 32, 24), makeMat(0xe2e8f0));
+            skull.position.y = 2.5;
+            registerMesh('skull', skull);
+            group.add(skull);
+
+            const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 2.2, 16), makeMat(0xcbd5e1));
+            spine.position.y = 1.0;
+            registerMesh('spine', spine);
+            group.add(spine);
+
+            const ribs = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.1, 12, 24), makeMat(0x94a3b8));
+            ribs.rotation.x = Math.PI / 2;
+            ribs.position.y = 1.4;
+            registerMesh('ribcage', ribs);
+            group.add(ribs);
+
+            const chest = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 0.2), makeMat(0xf43f5e));
+            chest.position.set(0, 1.4, 0.4);
+            registerMesh('muscles_chest', chest);
+            group.add(chest);
+
+            const heart = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), makeMat(0xef4444));
+            heart.position.set(0.15, 1.35, 0.2);
+            registerMesh('heart', heart);
+            group.add(heart);
+
+            scene.add(group);
+        }
+
+        function registerMesh(id, mesh) {
+            const data = ANATOMY_DATA.find(d => d.id === id);
+            mesh.userData = {
+                id: id,
+                nameCz: data.nameCz,
+                nameLat: data.nameLat,
+                system: data.system,
+                originalColor: mesh.material.color.getHex(),
+                originalOpacity: 1
+            };
+            meshMap.set(id, mesh);
         }
 
         // --- MODEL CREATION (STYLIZED PROCEDURAL GEOMETRY) ---
